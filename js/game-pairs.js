@@ -4,14 +4,14 @@ import { hashDate, makePRNG, seededShuffle, getTodayString } from './prng.js';
 const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
 
 const PAIR_COLORS = [
-  '#FF6B6B', // coral red
-  '#FF9A3C', // orange
-  '#FFD93D', // yellow
-  '#6BCB77', // green
-  '#4DC9C9', // teal
-  '#4D96FF', // blue
-  '#C77DFF', // purple
-  '#FF6BB5', // pink
+  '#0ece28', // green
+  '#70d7ee', // cyan
+  '#fc9043', // orange
+  '#ffdd00', // yellow
+  '#E6194B', // red
+  '#395de1', // blue
+  '#c347e9', // purple
+  '#575756', // gray
 ];
 
 // ── Puzzle generation ────────────────────────────────────────────────────────

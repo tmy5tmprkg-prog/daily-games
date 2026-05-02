@@ -158,7 +158,7 @@ html, body {
 .grid-cell {
   aspect-ratio: 1;
   background: var(--surface);
-  border: 2px solid var(--border);
+  border: 4px solid var(--border);
   border-radius: var(--radius);
   font-size: clamp(1.6rem, 6.5vw, 2.4rem);
   display: flex;
