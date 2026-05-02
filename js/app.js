@@ -1,0 +1,129 @@
+import { initPairsGame } from './game-pairs.js';
+import { getTodayString } from './prng.js';
+
+const PASSWORD = 'skyr-me'; // obscurity only — visible in DevTools
+const AUTH_COOKIE = 'daily_games_auth';
+const STATE_COOKIE = 'pairs_state';
+
+// ── Cookie helpers ───────────────────────────────────────────────────────────
+
+function setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Strict`;
+}
+
+function getCookie(name) {
+  const match = document.cookie.split('; ').find(r => r.startsWith(name + '='));
+  return match ? decodeURIComponent(match.split('=')[1]) : null;
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+function isAuthed() {
+  return getCookie(AUTH_COOKIE) === btoa(PASSWORD);
+}
+
+function setAuthed() {
+  setCookie(AUTH_COOKIE, btoa(PASSWORD), 365);
+}
+
+// ── Game state cookie ────────────────────────────────────────────────────────
+
+function loadState(today) {
+  try {
+    const raw = getCookie(STATE_COOKIE);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.date !== today) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function saveState(patch) {
+  const today = getTodayString();
+  let data = loadState(today) || { date: today, matched: [], completed: false, streak: 0, lastCompleted: null };
+  Object.assign(data, patch);
+  setCookie(STATE_COOKIE, JSON.stringify(data), 30);
+}
+
+function computeNewStreak(saved) {
+  const today = getTodayString();
+  if (!saved?.lastCompleted) return 1;
+  const last = new Date(saved.lastCompleted);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const wasYesterday = last.toLocaleDateString('sv') === yesterday.toLocaleDateString('sv');
+  return wasYesterday ? (saved.streak || 0) + 1 : 1;
+}
+
+// ── Tab routing ──────────────────────────────────────────────────────────────
+
+const gameInits = {
+  pairs: (el) => {
+    const today = getTodayString();
+    const saved = loadState(today);
+    initPairsGame(el, {
+      loadState: (d) => loadState(d),
+      saveMatched: (matched) => saveState({ matched }),
+      markComplete: () => {
+        const saved = loadState(today);
+        const streak = computeNewStreak(saved);
+        saveState({ completed: true, lastCompleted: today, streak });
+      },
+    });
+  },
+};
+
+function activateTab(gameId) {
+  sessionStorage.setItem('activeTab', gameId);
+  document.querySelectorAll('#tab-bar .tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.game === gameId);
+  });
+  const area = document.getElementById('game-area');
+  if (gameInits[gameId]) gameInits[gameId](area);
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  const gate = document.getElementById('password-gate');
+  const app  = document.getElementById('app');
+
+  if (isAuthed()) {
+    gate.hidden = true;
+    app.hidden = false;
+    boot();
+    return;
+  }
+
+  gate.hidden = false;
+  app.hidden = true;
+
+  const form = document.getElementById('pw-form');
+  const input = document.getElementById('pw-input');
+  const error = document.getElementById('pw-error');
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (input.value === PASSWORD) {
+      setAuthed();
+      gate.hidden = true;
+      app.hidden = false;
+      boot();
+    } else {
+      error.textContent = 'Incorrect password.';
+      input.value = '';
+      input.focus();
+    }
+  });
+});
+
+function boot() {
+  document.querySelectorAll('#tab-bar .tab').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.game));
+  });
+  const saved = sessionStorage.getItem('activeTab') || 'pairs';
+  activateTab(saved);
+}
