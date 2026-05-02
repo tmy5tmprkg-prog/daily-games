@@ -1,4 +1,4 @@
-import { EMOJI_POOL, ANCHOR_PAIRS, buildAdjacency, getEmojiById } from '../data/emoji-pairs.js';
+import { EMOJI_POOL, FALLBACK_PAIRS, buildAdjacency, getEmojiById, isPair } from '../data/emoji-pairs.js';
 import { hashDate, makePRNG, seededShuffle, getTodayString } from './prng.js';
 
 const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
@@ -6,12 +6,7 @@ const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
 // ── Puzzle generation ────────────────────────────────────────────────────────
 
 function validPartners(emoji, pool, usedIds) {
-  return pool.filter(e => !usedIds.has(e.id) && e.id !== emoji.id && canPair(emoji, e));
-}
-
-function canPair(a, b) {
-  const adj = buildAdjacency([a, b]);
-  return adj.get(a.id).has(b.id);
+  return pool.filter(e => !usedIds.has(e.id) && isPair(emoji.id, e.id));
 }
 
 // Counts perfect matchings in a general (non-bipartite) graph.
@@ -77,10 +72,10 @@ export function generatePuzzle(dateStr) {
     if (solution.length === 8) break;
   }
 
-  // Fallback to anchor pairs if we couldn't find 8
+  // Fallback: use the pre-verified forced pairs (unique solution guaranteed)
   if (solution.length < 8) {
     solution.length = 0;
-    for (const [idA, idB] of ANCHOR_PAIRS) {
+    for (const [idA, idB] of FALLBACK_PAIRS) {
       solution.push([getEmojiById(idA), getEmojiById(idB)]);
     }
   }
