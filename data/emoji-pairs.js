@@ -113,38 +113,31 @@ export const VALID_PAIRS = Object.freeze([
   ['globe',      'ufo'        ], // UFO visiting Earth
 ]);
 
-// O(1) pair lookup — canonical form sorts the two IDs
-const _PAIR_SET = new Set(VALID_PAIRS.map(([a, b]) => [a, b].sort().join('|')));
-export function isPair(idA, idB) {
-  return _PAIR_SET.has([idA, idB].sort().join('|'));
+const _NEIGHBORS = new Map();
+for (const [a, b] of VALID_PAIRS) {
+  if (!_NEIGHBORS.has(a)) _NEIGHBORS.set(a, new Set());
+  if (!_NEIGHBORS.has(b)) _NEIGHBORS.set(b, new Set());
+  _NEIGHBORS.get(a).add(b);
+  _NEIGHBORS.get(b).add(a);
 }
 
-// Fallback puzzle — 8 pairs that are forced (each emoji has only 1 valid partner
-// within this set), guaranteeing a unique solution without any computation.
-export const FALLBACK_PAIRS = Object.freeze([
-  ['sun',        'rainbow'    ], // rainbow→sun only
-  ['moon',       'owl'        ], // owl→moon only
-  ['frog',       'turtle'     ], // frog→turtle only (within this set)
-  ['blossom',    'herb'       ], // herb→blossom only
-  ['butterfly',  'caterpillar'], // caterpillar→butterfly only
-  ['wave',       'surfer'     ], // surfer→wave only
-  ['key',        'lock'       ], // both forced
-  ['shield',     'sword'      ], // both forced
-]);
+export function isPair(idA, idB) {
+  return _NEIGHBORS.get(idA)?.has(idB) ?? false;
+}
 
 export function buildAdjacency(emojiSubset) {
   const ids = new Set(emojiSubset.map(e => e.id));
   const adj = new Map();
-  for (const e of emojiSubset) adj.set(e.id, new Set());
-  for (const [a, b] of VALID_PAIRS) {
-    if (ids.has(a) && ids.has(b)) {
-      adj.get(a).add(b);
-      adj.get(b).add(a);
+  for (const e of emojiSubset) {
+    const nbrs = new Set();
+    for (const n of _NEIGHBORS.get(e.id) || []) {
+      if (ids.has(n)) nbrs.add(n);
     }
+    adj.set(e.id, nbrs);
   }
   return adj;
 }
 
-export function getEmojiById(id) {
-  return EMOJI_POOL.find(e => e.id === id);
+export function edgeKey(idA, idB) {
+  return idA < idB ? `${idA}|${idB}` : `${idB}|${idA}`;
 }

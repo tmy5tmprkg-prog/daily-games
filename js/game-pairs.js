@@ -1,4 +1,4 @@
-import { EMOJI_POOL, FALLBACK_PAIRS, buildAdjacency, getEmojiById, isPair } from '../data/emoji-pairs.js';
+import { EMOJI_POOL, buildAdjacency, edgeKey, isPair } from '../data/emoji-pairs.js';
 import { hashDate, makePRNG, seededShuffle, getTodayString } from './prng.js';
 
 const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
@@ -16,11 +16,11 @@ const PAIR_COLORS = [
 
 // ── Puzzle generation ────────────────────────────────────────────────────────
 
-function validPartners(emoji, pool, usedIds) {
+export function validPartners(emoji, pool, usedIds) {
   return pool.filter(e => !usedIds.has(e.id) && isPair(emoji.id, e.id));
 }
 
-function countPerfectMatchings(emojis, adj, matched) {
+export function countPerfectMatchings(emojis, adj, matched) {
   const first = emojis.find(e => !matched.has(e.id));
   if (!first) return 1;
   let count = 0;
@@ -37,18 +37,14 @@ function countPerfectMatchings(emojis, adj, matched) {
   return count;
 }
 
-function enforceUniqueness(grid16, solution, adj) {
-  const solutionEdges = new Set();
-  for (const [a, b] of solution) {
-    solutionEdges.add(`${a.id}|${b.id}`);
-    solutionEdges.add(`${b.id}|${a.id}`);
-  }
+export function enforceUniqueness(grid16, solution, adj) {
+  const solutionEdges = new Set(solution.map(([a, b]) => edgeKey(a.id, b.id)));
   for (let attempt = 0; attempt < 100; attempt++) {
     if (countPerfectMatchings(grid16, adj, new Set()) === 1) return true;
     let pruned = false;
     outer: for (const e of grid16) {
       for (const nId of [...(adj.get(e.id) || [])]) {
-        if (!solutionEdges.has(`${e.id}|${nId}`)) {
+        if (!solutionEdges.has(edgeKey(e.id, nId))) {
           adj.get(e.id).delete(nId);
           adj.get(nId).delete(e.id);
           pruned = true;
@@ -64,13 +60,13 @@ function enforceUniqueness(grid16, solution, adj) {
 // Counts constraint-propagation rounds needed to solve the puzzle.
 // A uniquely-solvable puzzle always terminates (no backtracking is ever truly
 // required — see comment on generatePuzzle). Higher rounds = harder.
-function computeCPD(adj) {
+export function computeCPD(adj) {
   const rem = new Map();
   for (const [id, nbrs] of adj) rem.set(id, new Set(nbrs));
   let rounds = 0;
   while (rem.size > 0) {
     const forced = [...rem.keys()].filter(id => rem.get(id).size === 1);
-    if (forced.length === 0) return Infinity; // should not happen with a unique solution
+    if (forced.length === 0) return Infinity;
     rounds++;
     const removed = new Set();
     for (const id of forced) {
@@ -87,7 +83,7 @@ function computeCPD(adj) {
   return rounds;
 }
 
-function tryBuildPuzzle(rng) {
+export function tryBuildPuzzle(rng) {
   const shuffled = seededShuffle([...EMOJI_POOL], rng);
   const solution = [];
   const usedIds = new Set();
@@ -109,9 +105,7 @@ function tryBuildPuzzle(rng) {
   const adj = buildAdjacency(grid16);
   enforceUniqueness(grid16, solution, adj);
 
-  const positions = seededShuffle([...Array(16).keys()], rng);
-  const grid = new Array(16);
-  grid16.forEach((emoji, i) => { grid[positions[i]] = emoji; });
+  const grid = seededShuffle(grid16, rng);
 
   const solutionMap = new Map();
   for (const [a, b] of solution) {
@@ -119,7 +113,7 @@ function tryBuildPuzzle(rng) {
     solutionMap.set(b.id, a.id);
   }
 
-  return { grid, solutionMap, adj };
+  return { grid, solution, solutionMap, adj };
 }
 
 export function generatePuzzle(dateStr) {
@@ -132,55 +126,40 @@ export function generatePuzzle(dateStr) {
     // CPD ≥ 2: player must first solve the obvious pairs, then use those to deduce
     // the ambiguous ones — plus misleading non-solution edges add red-herring friction.
     // (CPD ≥ 3 is mathematically impossible for uniquely-solvable puzzles.)
-    if (computeCPD(puzzle.adj) >= 2) return { grid: puzzle.grid, solutionMap: puzzle.solutionMap };
+    if (computeCPD(puzzle.adj) >= 2) return puzzle;
   }
-  // Safety net — not reached in practice
-  if (fallback) return { grid: fallback.grid, solutionMap: fallback.solutionMap };
-  const solution = FALLBACK_PAIRS.map(([idA, idB]) => [getEmojiById(idA), getEmojiById(idB)]);
-  const grid16f = solution.flatMap(([a, b]) => [a, b]);
-  const rngF = makePRNG(hashDate(dateStr));
-  const posF = seededShuffle([...Array(16).keys()], rngF);
-  const gridF = new Array(16);
-  grid16f.forEach((emoji, i) => { gridF[posF[i]] = emoji; });
-  const smF = new Map();
-  for (const [a, b] of solution) { smF.set(a.id, b.id); smF.set(b.id, a.id); }
-  return { grid: gridF, solutionMap: smF };
+  if (fallback) return fallback;
+  throw new Error(`Could not generate puzzle for ${dateStr}`);
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-// pairs: Map<id, { partner: id, colorIdx: number }>  (two entries per pair)
-// pending: id | null
-// pendingColor: number  (colorIdx of the current pending emoji)
-// paletteIdx: number    (advances each time a new pending is started)
+// pairs: Map<id, { partner: id, colorIdx }> — two entries per pair
 let state = null;
 let containerEl = null;
 let cookieCallbacks = null;
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-function cellFor(id) {
-  return containerEl.querySelector(`.grid-cell[data-id="${id}"]`);
-}
-
 function applyVisualState(id) {
-  const cell = cellFor(id);
+  const cell = state.cellMap.get(id);
   if (!cell) return;
   cell.classList.remove('pending', 'paired');
   cell.style.removeProperty('--pair-color');
 
   if (state.pending === id) {
     cell.classList.add('pending');
-    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pendingColor % 8]);
+    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pendingColor % PAIR_COLORS.length]);
   } else if (state.pairs.has(id)) {
     cell.classList.add('paired');
-    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pairs.get(id).colorIdx % 8]);
+    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pairs.get(id).colorIdx % PAIR_COLORS.length]);
   }
 }
 
 function renderGrid() {
   const gridEl = containerEl.querySelector('.pairs-grid');
   gridEl.innerHTML = '';
+  state.cellMap.clear();
   state.grid.forEach((emoji) => {
     const cell = document.createElement('button');
     cell.className = 'grid-cell';
@@ -189,6 +168,7 @@ function renderGrid() {
     cell.setAttribute('aria-label', emoji.label);
     cell.addEventListener('click', () => handleCellTap(emoji.id));
     gridEl.appendChild(cell);
+    state.cellMap.set(emoji.id, cell);
     applyVisualState(emoji.id);
   });
   updateStatus();
@@ -207,8 +187,13 @@ function handleCellTap(id) {
   const isPaired  = pairs.has(id);
   const isPending = pending === id;
 
-  if (!isPaired && !isPending && pending === null) {
-    // idle → pending: start a new pair with next palette color
+  if (isPending) {
+    state.pending = null;
+    applyVisualState(id);
+    return;
+  }
+
+  if (!isPaired && pending === null) {
     state.pendingColor = state.paletteIdx;
     state.paletteIdx++;
     state.pending = id;
@@ -216,19 +201,11 @@ function handleCellTap(id) {
     return;
   }
 
-  if (isPending) {
-    // tap own pending → deselect
-    state.pending = null;
-    applyVisualState(id);
-    return;
-  }
-
-  if (!isPaired && !isPending && pending !== null) {
-    // idle + pending A → form pair: A + id
+  if (!isPaired && pending !== null) {
     const colorIdx = state.pendingColor;
     const prevId = pending;
-    state.pairs.set(prevId, { partner: id, colorIdx });
-    state.pairs.set(id,     { partner: prevId, colorIdx });
+    pairs.set(prevId, { partner: id, colorIdx });
+    pairs.set(id,     { partner: prevId, colorIdx });
     state.pending = null;
     applyVisualState(prevId);
     applyVisualState(id);
@@ -238,43 +215,32 @@ function handleCellTap(id) {
   }
 
   if (isPaired && pending === null) {
-    // tap a paired emoji with nothing pending → break its pair, partner becomes orphan/pending
+    // partner becomes the new pending and inherits the broken pair's color
     const { partner, colorIdx } = pairs.get(id);
     pairs.delete(id);
     pairs.delete(partner);
-    // partner becomes the new pending (orphan keeps old color)
     state.pending = partner;
     state.pendingColor = colorIdx;
-    applyVisualState(id);       // id → idle
-    applyVisualState(partner);  // partner → pending
-    updateStatus();
-    return;
-  }
-
-  if (isPaired && pending !== null) {
-    // pending C + tap paired A (partner B) → C pairs with A, B becomes orphan/pending
-    const { partner: partnerOfA } = pairs.get(id);
-    const colorIdx = state.pendingColor;
-    const prevId = pending;
-
-    // break A's old pair
-    pairs.delete(id);
-    pairs.delete(partnerOfA);
-
-    // form C–A
-    pairs.set(prevId, { partner: id, colorIdx });
-    pairs.set(id,     { partner: prevId, colorIdx });
-
-    // B goes back to idle
-    state.pending = null;
-
-    applyVisualState(prevId);
     applyVisualState(id);
-    applyVisualState(partnerOfA);
+    applyVisualState(partner);
     updateStatus();
-    checkWin();
     return;
   }
+
+  // isPaired && pending !== null: pending steals id from its partner; partner goes idle
+  const { partner: partnerOfA } = pairs.get(id);
+  const colorIdx = state.pendingColor;
+  const prevId = pending;
+  pairs.delete(id);
+  pairs.delete(partnerOfA);
+  pairs.set(prevId, { partner: id, colorIdx });
+  pairs.set(id,     { partner: prevId, colorIdx });
+  state.pending = null;
+  applyVisualState(prevId);
+  applyVisualState(id);
+  applyVisualState(partnerOfA);
+  updateStatus();
+  checkWin();
 }
 
 // ── Win check ────────────────────────────────────────────────────────────────
@@ -308,35 +274,37 @@ function resetBoard() {
 // ── Win screen ───────────────────────────────────────────────────────────────
 
 function showWinScreen() {
-  const overlay = containerEl.querySelector('.win-overlay');
-  overlay.hidden = false;
+  containerEl.querySelector('.win-overlay').hidden = false;
   startConfetti(containerEl.querySelector('.confetti-canvas'));
+  if (cookieCallbacks) cookieCallbacks.markComplete();
+}
 
-  const closeBtn = overlay.querySelector('.win-close');
-  closeBtn.addEventListener('click', () => { overlay.hidden = true; });
+function flashCopied(btn) {
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Share result'; }, 2000);
+}
+
+function copyToClipboard(text) {
+  return navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function attachOverlayListeners(el) {
+  const overlay = el.querySelector('.win-overlay');
+  overlay.querySelector('.win-close').addEventListener('click', () => { overlay.hidden = true; });
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.hidden = true;
   });
-
   const shareBtn = overlay.querySelector('.share-btn');
   shareBtn.addEventListener('click', () => {
-    const text = buildShareText();
-    navigator.clipboard.writeText(text).then(() => {
-      shareBtn.textContent = 'Copied!';
-      setTimeout(() => { shareBtn.textContent = 'Share result'; }, 2000);
-    }).catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      shareBtn.textContent = 'Copied!';
-      setTimeout(() => { shareBtn.textContent = 'Share result'; }, 2000);
-    });
+    copyToClipboard(buildShareText()).then(() => flashCopied(shareBtn));
   });
-
-  if (cookieCallbacks) cookieCallbacks.markComplete();
 }
 
 function buildShareText() {
@@ -396,6 +364,7 @@ export function initPairsGame(el, cookies) {
     pending: null,
     pendingColor: 0,
     paletteIdx: 0,
+    cellMap: new Map(),
   };
 
   const tmpl = document.getElementById('pairs-template');
@@ -414,6 +383,7 @@ export function initPairsGame(el, cookies) {
   }
 
   el.querySelector('.reset-btn').addEventListener('click', resetBoard);
+  attachOverlayListeners(el);
 
   renderGrid();
 
