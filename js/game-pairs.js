@@ -187,6 +187,13 @@ function showWinScreen() {
   overlay.hidden = false;
   startConfetti(containerEl.querySelector('.confetti-canvas'));
 
+  const closeBtn = overlay.querySelector('.win-close');
+  closeBtn.addEventListener('click', () => { overlay.hidden = true; });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.hidden = true;
+  });
+
   const shareBtn = overlay.querySelector('.share-btn');
   shareBtn.addEventListener('click', () => {
     const text = buildShareText();

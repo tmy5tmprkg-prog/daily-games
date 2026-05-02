@@ -240,6 +240,22 @@ html, body {
   z-index: 1;
 }
 
+.win-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.win-close:hover { color: var(--text); }
+
 .win-card h2 { font-size: 2rem; margin-bottom: 8px; }
 .win-card p  { color: var(--text-muted); margin-bottom: 24px; }
 
