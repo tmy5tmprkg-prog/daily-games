@@ -61,10 +61,34 @@ function enforceUniqueness(grid16, solution, adj) {
   return countPerfectMatchings(grid16, adj, new Set()) === 1;
 }
 
-export function generatePuzzle(dateStr) {
-  const rng = makePRNG(hashDate(dateStr));
-  const shuffled = seededShuffle([...EMOJI_POOL], rng);
+// Counts constraint-propagation rounds needed to solve the puzzle.
+// A uniquely-solvable puzzle always terminates (no backtracking is ever truly
+// required — see comment on generatePuzzle). Higher rounds = harder.
+function computeCPD(adj) {
+  const rem = new Map();
+  for (const [id, nbrs] of adj) rem.set(id, new Set(nbrs));
+  let rounds = 0;
+  while (rem.size > 0) {
+    const forced = [...rem.keys()].filter(id => rem.get(id).size === 1);
+    if (forced.length === 0) return Infinity; // should not happen with a unique solution
+    rounds++;
+    const removed = new Set();
+    for (const id of forced) {
+      if (removed.has(id)) continue;
+      const nbrs = rem.get(id);
+      if (!nbrs || nbrs.size !== 1) continue;
+      const [partnerId] = nbrs;
+      removed.add(id);
+      removed.add(partnerId);
+    }
+    for (const id of removed) rem.delete(id);
+    for (const s of rem.values()) for (const id of removed) s.delete(id);
+  }
+  return rounds;
+}
 
+function tryBuildPuzzle(rng) {
+  const shuffled = seededShuffle([...EMOJI_POOL], rng);
   const solution = [];
   const usedIds = new Set();
 
@@ -79,12 +103,7 @@ export function generatePuzzle(dateStr) {
     if (solution.length === 8) break;
   }
 
-  if (solution.length < 8) {
-    solution.length = 0;
-    for (const [idA, idB] of FALLBACK_PAIRS) {
-      solution.push([getEmojiById(idA), getEmojiById(idB)]);
-    }
-  }
+  if (solution.length < 8) return null;
 
   const grid16 = solution.flatMap(([a, b]) => [a, b]);
   const adj = buildAdjacency(grid16);
@@ -100,7 +119,32 @@ export function generatePuzzle(dateStr) {
     solutionMap.set(b.id, a.id);
   }
 
-  return { grid, solutionMap };
+  return { grid, solutionMap, adj };
+}
+
+export function generatePuzzle(dateStr) {
+  let fallback = null;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const rng = makePRNG(hashDate(`${dateStr}:${attempt}`));
+    const puzzle = tryBuildPuzzle(rng);
+    if (!puzzle) continue;
+    if (!fallback) fallback = puzzle;
+    // CPD ≥ 2: player must first solve the obvious pairs, then use those to deduce
+    // the ambiguous ones — plus misleading non-solution edges add red-herring friction.
+    // (CPD ≥ 3 is mathematically impossible for uniquely-solvable puzzles.)
+    if (computeCPD(puzzle.adj) >= 2) return { grid: puzzle.grid, solutionMap: puzzle.solutionMap };
+  }
+  // Safety net — not reached in practice
+  if (fallback) return { grid: fallback.grid, solutionMap: fallback.solutionMap };
+  const solution = FALLBACK_PAIRS.map(([idA, idB]) => [getEmojiById(idA), getEmojiById(idB)]);
+  const grid16f = solution.flatMap(([a, b]) => [a, b]);
+  const rngF = makePRNG(hashDate(dateStr));
+  const posF = seededShuffle([...Array(16).keys()], rngF);
+  const gridF = new Array(16);
+  grid16f.forEach((emoji, i) => { gridF[posF[i]] = emoji; });
+  const smF = new Map();
+  for (const [a, b] of solution) { smF.set(a.id, b.id); smF.set(b.id, a.id); }
+  return { grid: gridF, solutionMap: smF };
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
