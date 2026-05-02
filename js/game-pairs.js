@@ -14,52 +14,49 @@ function canPair(a, b) {
   return adj.get(a.id).has(b.id);
 }
 
-// Returns number of perfect matchings. left/right are arrays of emoji objects.
-function countPerfectMatchings(left, right, adj, matchedRight, idx) {
-  if (idx === left.length) return 1;
+// Counts perfect matchings in a general (non-bipartite) graph.
+// Picks the first unmatched emoji and tries pairing it with each valid neighbor.
+// Returns early once count exceeds 1 — we only need to distinguish 1 vs >1.
+function countPerfectMatchings(emojis, adj, matched) {
+  const first = emojis.find(e => !matched.has(e.id));
+  if (!first) return 1;
   let count = 0;
-  const neighbors = adj.get(left[idx].id) || new Set();
-  for (const r of right) {
-    if (!matchedRight.has(r.id) && neighbors.has(r.id)) {
-      matchedRight.add(r.id);
-      count += countPerfectMatchings(left, right, adj, matchedRight, idx + 1);
-      matchedRight.delete(r.id);
-      if (count > 1) return count; // early exit — we only need to know if > 1
+  for (const nId of (adj.get(first.id) || [])) {
+    if (!matched.has(nId)) {
+      matched.add(first.id);
+      matched.add(nId);
+      count += countPerfectMatchings(emojis, adj, matched);
+      matched.delete(first.id);
+      matched.delete(nId);
+      if (count > 1) return count;
     }
   }
   return count;
 }
 
-function enforceUniqueness(left, right, adj, rng) {
-  // Repeatedly remove an ambiguous edge until only 1 perfect matching remains.
-  // We identify an edge used by an alternative matching and "break" it by
-  // replacing one emoji with a pool emoji that has fewer connections.
-  let attempts = 0;
-  while (attempts++ < 20) {
-    const count = countPerfectMatchings(left, right, adj, new Set(), 0);
-    if (count === 1) return true;
-
-    // Find an edge in adj that creates ambiguity: look for a right-side emoji
-    // that has >1 valid left-side partner in the current set.
-    let broke = false;
-    for (const r of right) {
-      const lPartners = left.filter(l => (adj.get(l.id) || new Set()).has(r.id));
-      if (lPartners.length > 1) {
-        // Remove one adjacency edge to reduce ambiguity.
-        // Pick the partner that is NOT the intended solution match (index-matched).
-        const intendedL = left[right.indexOf(r)];
-        const extraL = lPartners.find(l => l.id !== intendedL.id);
-        if (extraL) {
-          adj.get(extraL.id).delete(r.id);
-          adj.get(r.id).delete(extraL.id);
-          broke = true;
-          break;
+function enforceUniqueness(grid16, solution, adj) {
+  const solutionEdges = new Set();
+  for (const [a, b] of solution) {
+    solutionEdges.add(`${a.id}|${b.id}`);
+    solutionEdges.add(`${b.id}|${a.id}`);
+  }
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (countPerfectMatchings(grid16, adj, new Set()) === 1) return true;
+    // Remove one non-solution edge per iteration until unique
+    let pruned = false;
+    outer: for (const e of grid16) {
+      for (const nId of [...(adj.get(e.id) || [])]) {
+        if (!solutionEdges.has(`${e.id}|${nId}`)) {
+          adj.get(e.id).delete(nId);
+          adj.get(nId).delete(e.id);
+          pruned = true;
+          break outer;
         }
       }
     }
-    if (!broke) break;
+    if (!pruned) break;
   }
-  return countPerfectMatchings(left, right, adj, new Set(), 0) === 1;
+  return countPerfectMatchings(grid16, adj, new Set()) === 1;
 }
 
 export function generatePuzzle(dateStr) {
@@ -88,14 +85,11 @@ export function generatePuzzle(dateStr) {
     }
   }
 
-  const left = solution.map(p => p[0]);
-  const right = solution.map(p => p[1]);
-  const grid16 = [...left, ...right];
+  const grid16 = solution.flatMap(([a, b]) => [a, b]);
   const adj = buildAdjacency(grid16);
 
-  // Ensure unique solution (modifies adj in-place for counting purposes only;
-  // the actual validity shown to the user is driven by adj at game-time).
-  enforceUniqueness(left, right, adj, rng);
+  // Prune non-solution edges from adj until exactly 1 perfect matching remains.
+  enforceUniqueness(grid16, solution, adj);
 
   const positions = seededShuffle([...Array(16).keys()], rng);
   const grid = new Array(16);
