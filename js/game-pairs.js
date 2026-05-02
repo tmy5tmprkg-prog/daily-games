@@ -209,7 +209,7 @@ function handleCellTap(id) {
 
   if (isPaired && pending !== null) {
     // pending C + tap paired A (partner B) → C pairs with A, B becomes orphan/pending
-    const { partner: partnerOfA, colorIdx: oldColorIdx } = pairs.get(id);
+    const { partner: partnerOfA } = pairs.get(id);
     const colorIdx = state.pendingColor;
     const prevId = pending;
 
@@ -221,9 +221,8 @@ function handleCellTap(id) {
     pairs.set(prevId, { partner: id, colorIdx });
     pairs.set(id,     { partner: prevId, colorIdx });
 
-    // B becomes orphan/pending with its old color
-    state.pending = partnerOfA;
-    state.pendingColor = oldColorIdx;
+    // B goes back to idle
+    state.pending = null;
 
     applyVisualState(prevId);
     applyVisualState(id);
