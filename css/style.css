@@ -177,28 +177,46 @@ html, body {
   background: var(--surface2);
 }
 
-.grid-cell.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+.grid-cell.pending {
   transform: scale(1.08);
+  border-color: var(--pair-color);
+  background: color-mix(in srgb, var(--pair-color) 18%, var(--surface));
 }
 
-.grid-cell.matched {
-  opacity: 0.35;
-  border-color: var(--success);
-  background: color-mix(in srgb, var(--success) 10%, var(--surface));
-  cursor: default;
+.grid-cell.paired {
+  opacity: 0.45;
+  border-color: var(--pair-color);
+  background: color-mix(in srgb, var(--pair-color) 12%, var(--surface));
 }
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
-  20%       { transform: translateX(-6px); }
-  40%       { transform: translateX(6px); }
+  20%       { transform: translateX(-7px); }
+  40%       { transform: translateX(7px); }
   60%       { transform: translateX(-4px); }
   80%       { transform: translateX(4px); }
 }
 
-.grid-cell.shake { animation: shake 0.4s ease; }
+.pairs-grid.shake { animation: shake 0.5s ease; }
+
+.pairs-controls {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.reset-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+.reset-btn:hover { color: var(--text); border-color: var(--text-muted); }
 
 .pairs-status {
   text-align: center;

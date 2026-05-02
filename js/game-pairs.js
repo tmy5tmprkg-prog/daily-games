@@ -3,15 +3,23 @@ import { hashDate, makePRNG, seededShuffle, getTodayString } from './prng.js';
 
 const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
 
+const PAIR_COLORS = [
+  '#FF6B6B', // coral red
+  '#FF9A3C', // orange
+  '#FFD93D', // yellow
+  '#6BCB77', // green
+  '#4DC9C9', // teal
+  '#4D96FF', // blue
+  '#C77DFF', // purple
+  '#FF6BB5', // pink
+];
+
 // ── Puzzle generation ────────────────────────────────────────────────────────
 
 function validPartners(emoji, pool, usedIds) {
   return pool.filter(e => !usedIds.has(e.id) && isPair(emoji.id, e.id));
 }
 
-// Counts perfect matchings in a general (non-bipartite) graph.
-// Picks the first unmatched emoji and tries pairing it with each valid neighbor.
-// Returns early once count exceeds 1 — we only need to distinguish 1 vs >1.
 function countPerfectMatchings(emojis, adj, matched) {
   const first = emojis.find(e => !matched.has(e.id));
   if (!first) return 1;
@@ -37,7 +45,6 @@ function enforceUniqueness(grid16, solution, adj) {
   }
   for (let attempt = 0; attempt < 100; attempt++) {
     if (countPerfectMatchings(grid16, adj, new Set()) === 1) return true;
-    // Remove one non-solution edge per iteration until unique
     let pruned = false;
     outer: for (const e of grid16) {
       for (const nId of [...(adj.get(e.id) || [])]) {
@@ -58,7 +65,7 @@ export function generatePuzzle(dateStr) {
   const rng = makePRNG(hashDate(dateStr));
   const shuffled = seededShuffle([...EMOJI_POOL], rng);
 
-  const solution = []; // [[emojiA, emojiB], ...]
+  const solution = [];
   const usedIds = new Set();
 
   for (const emoji of shuffled) {
@@ -72,7 +79,6 @@ export function generatePuzzle(dateStr) {
     if (solution.length === 8) break;
   }
 
-  // Fallback: use the pre-verified forced pairs (unique solution guaranteed)
   if (solution.length < 8) {
     solution.length = 0;
     for (const [idA, idB] of FALLBACK_PAIRS) {
@@ -82,102 +88,178 @@ export function generatePuzzle(dateStr) {
 
   const grid16 = solution.flatMap(([a, b]) => [a, b]);
   const adj = buildAdjacency(grid16);
-
-  // Prune non-solution edges from adj until exactly 1 perfect matching remains.
   enforceUniqueness(grid16, solution, adj);
 
   const positions = seededShuffle([...Array(16).keys()], rng);
   const grid = new Array(16);
   grid16.forEach((emoji, i) => { grid[positions[i]] = emoji; });
 
-  // Solution map: id -> id of correct partner
   const solutionMap = new Map();
   for (const [a, b] of solution) {
     solutionMap.set(a.id, b.id);
     solutionMap.set(b.id, a.id);
   }
 
-  return { grid, solutionMap, adj };
+  return { grid, solutionMap };
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let state = null; // { grid, solutionMap, adj, matched: Set of id pairs, selected: id|null }
+// pairs: Map<id, { partner: id, colorIdx: number }>  (two entries per pair)
+// pending: id | null
+// pendingColor: number  (colorIdx of the current pending emoji)
+// paletteIdx: number    (advances each time a new pending is started)
+let state = null;
 let containerEl = null;
 let cookieCallbacks = null;
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
+function cellFor(id) {
+  return containerEl.querySelector(`.grid-cell[data-id="${id}"]`);
+}
+
+function applyVisualState(id) {
+  const cell = cellFor(id);
+  if (!cell) return;
+  cell.classList.remove('pending', 'paired');
+  cell.style.removeProperty('--pair-color');
+
+  if (state.pending === id) {
+    cell.classList.add('pending');
+    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pendingColor % 8]);
+  } else if (state.pairs.has(id)) {
+    cell.classList.add('paired');
+    cell.style.setProperty('--pair-color', PAIR_COLORS[state.pairs.get(id).colorIdx % 8]);
+  }
+}
+
 function renderGrid() {
   const gridEl = containerEl.querySelector('.pairs-grid');
   gridEl.innerHTML = '';
-  state.grid.forEach((emoji, idx) => {
+  state.grid.forEach((emoji) => {
     const cell = document.createElement('button');
     cell.className = 'grid-cell';
     cell.dataset.id = emoji.id;
-    cell.dataset.idx = idx;
     cell.textContent = emoji.emoji;
     cell.setAttribute('aria-label', emoji.label);
-    if (isMatched(emoji.id)) {
-      cell.classList.add('matched');
-      cell.disabled = true;
-    }
-    cell.addEventListener('click', () => handleCellTap(cell));
+    cell.addEventListener('click', () => handleCellTap(emoji.id));
     gridEl.appendChild(cell);
+    applyVisualState(emoji.id);
   });
   updateStatus();
 }
 
-function isMatched(id) {
-  for (const [a, b] of state.matched) {
-    if (a === id || b === id) return true;
-  }
-  return false;
-}
-
 function updateStatus() {
   const statusEl = containerEl.querySelector('.pairs-status');
-  const remaining = 8 - state.matched.size;
-  statusEl.textContent = remaining === 0 ? 'All pairs found!' : `${remaining} pair${remaining !== 1 ? 's' : ''} remaining`;
+  const formed = state.pairs.size / 2;
+  statusEl.textContent = `${formed} / 8 pairs formed`;
 }
 
 // ── Interaction ──────────────────────────────────────────────────────────────
 
-function handleCellTap(cell) {
-  const id = cell.dataset.id;
-  if (state.selected === null) {
-    state.selected = id;
-    cell.classList.add('selected');
-    return;
-  }
-  if (state.selected === id) {
-    state.selected = null;
-    cell.classList.remove('selected');
-    return;
-  }
-  const prevId = state.selected;
-  const prevCell = containerEl.querySelector(`.grid-cell[data-id="${prevId}"]`);
-  prevCell?.classList.remove('selected');
-  state.selected = null;
+function handleCellTap(id) {
+  const { pairs, pending } = state;
+  const isPaired  = pairs.has(id);
+  const isPending = pending === id;
 
-  if (state.solutionMap.get(prevId) === id) {
-    // Correct pair
-    state.matched.add([prevId, id]);
-    [prevCell, cell].forEach(c => {
-      if (c) { c.classList.add('matched'); c.disabled = true; }
-    });
-    saveProgress();
-    updateStatus();
-    if (state.matched.size === 8) {
-      setTimeout(showWinScreen, 400);
-    }
-  } else {
-    // Wrong pair
-    [prevCell, cell].forEach(c => c?.classList.add('shake'));
-    setTimeout(() => {
-      [prevCell, cell].forEach(c => c?.classList.remove('shake'));
-    }, 500);
+  if (!isPaired && !isPending && pending === null) {
+    // idle → pending: start a new pair with next palette color
+    state.pendingColor = state.paletteIdx;
+    state.paletteIdx++;
+    state.pending = id;
+    applyVisualState(id);
+    return;
   }
+
+  if (isPending) {
+    // tap own pending → deselect
+    state.pending = null;
+    applyVisualState(id);
+    return;
+  }
+
+  if (!isPaired && !isPending && pending !== null) {
+    // idle + pending A → form pair: A + id
+    const colorIdx = state.pendingColor;
+    const prevId = pending;
+    state.pairs.set(prevId, { partner: id, colorIdx });
+    state.pairs.set(id,     { partner: prevId, colorIdx });
+    state.pending = null;
+    applyVisualState(prevId);
+    applyVisualState(id);
+    updateStatus();
+    checkWin();
+    return;
+  }
+
+  if (isPaired && pending === null) {
+    // tap a paired emoji with nothing pending → break its pair, partner becomes orphan/pending
+    const { partner, colorIdx } = pairs.get(id);
+    pairs.delete(id);
+    pairs.delete(partner);
+    // partner becomes the new pending (orphan keeps old color)
+    state.pending = partner;
+    state.pendingColor = colorIdx;
+    applyVisualState(id);       // id → idle
+    applyVisualState(partner);  // partner → pending
+    updateStatus();
+    return;
+  }
+
+  if (isPaired && pending !== null) {
+    // pending C + tap paired A (partner B) → C pairs with A, B becomes orphan/pending
+    const { partner: partnerOfA, colorIdx: oldColorIdx } = pairs.get(id);
+    const colorIdx = state.pendingColor;
+    const prevId = pending;
+
+    // break A's old pair
+    pairs.delete(id);
+    pairs.delete(partnerOfA);
+
+    // form C–A
+    pairs.set(prevId, { partner: id, colorIdx });
+    pairs.set(id,     { partner: prevId, colorIdx });
+
+    // B becomes orphan/pending with its old color
+    state.pending = partnerOfA;
+    state.pendingColor = oldColorIdx;
+
+    applyVisualState(prevId);
+    applyVisualState(id);
+    applyVisualState(partnerOfA);
+    updateStatus();
+    checkWin();
+    return;
+  }
+}
+
+// ── Win check ────────────────────────────────────────────────────────────────
+
+function checkWin() {
+  if (state.pairs.size < 16) return;
+
+  const allCorrect = [...state.pairs.entries()].every(
+    ([id, { partner }]) => state.solutionMap.get(id) === partner
+  );
+
+  if (allCorrect) {
+    setTimeout(showWinScreen, 300);
+  } else {
+    const gridEl = containerEl.querySelector('.pairs-grid');
+    gridEl.classList.add('shake');
+    gridEl.addEventListener('animationend', () => gridEl.classList.remove('shake'), { once: true });
+  }
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────────
+
+function resetBoard() {
+  state.pairs.clear();
+  state.pending = null;
+  state.pendingColor = 0;
+  state.paletteIdx = 0;
+  renderGrid();
 }
 
 // ── Win screen ───────────────────────────────────────────────────────────────
@@ -189,7 +271,6 @@ function showWinScreen() {
 
   const closeBtn = overlay.querySelector('.win-close');
   closeBtn.addEventListener('click', () => { overlay.hidden = true; });
-
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.hidden = true;
   });
@@ -201,7 +282,6 @@ function showWinScreen() {
       shareBtn.textContent = 'Copied!';
       setTimeout(() => { shareBtn.textContent = 'Share result'; }, 2000);
     }).catch(() => {
-      // Fallback for browsers without clipboard API
       const ta = document.createElement('textarea');
       ta.value = text;
       document.body.appendChild(ta);
@@ -226,7 +306,7 @@ function startConfetti(canvas) {
   const ctx = canvas.getContext('2d');
   canvas.width = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
-  const colors = ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF', '#C77DFF', '#FF9A3C'];
+  const colors = PAIR_COLORS;
   const particles = Array.from({ length: 80 }, () => ({
     x: Math.random() * canvas.width,
     y: Math.random() * -canvas.height * 0.5,
@@ -256,13 +336,6 @@ function startConfetti(canvas) {
   requestAnimationFrame(tick);
 }
 
-// ── Cookie / persistence ─────────────────────────────────────────────────────
-
-function saveProgress() {
-  if (!cookieCallbacks) return;
-  cookieCallbacks.saveMatched([...state.matched]);
-}
-
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 export function initPairsGame(el, cookies) {
@@ -271,28 +344,22 @@ export function initPairsGame(el, cookies) {
 
   const today = getTodayString();
   const puzzle = generatePuzzle(today);
-
   const saved = cookies.loadState(today);
-  const restoredMatched = new Set();
-  if (saved?.matched) {
-    for (const pair of saved.matched) restoredMatched.add(pair);
-  }
 
   state = {
     grid: puzzle.grid,
     solutionMap: puzzle.solutionMap,
-    adj: puzzle.adj,
-    matched: restoredMatched,
-    selected: null,
+    pairs: new Map(),
+    pending: null,
+    pendingColor: 0,
+    paletteIdx: 0,
   };
 
-  // Clone template and inject
   const tmpl = document.getElementById('pairs-template');
   const content = tmpl.content.cloneNode(true);
   el.innerHTML = '';
   el.appendChild(content);
 
-  // Set date header
   const dateEl = el.querySelector('.pairs-date');
   if (dateEl) {
     dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
@@ -302,6 +369,8 @@ export function initPairsGame(el, cookies) {
   if (streakEl && saved?.streak) {
     streakEl.textContent = `🔥 ${saved.streak}`;
   }
+
+  el.querySelector('.reset-btn').addEventListener('click', resetBoard);
 
   renderGrid();
 
