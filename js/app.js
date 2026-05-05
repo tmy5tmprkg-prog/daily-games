@@ -1,9 +1,11 @@
 import { initPairsGame } from './game-pairs.js';
+import { initBrewGame } from './game-brew.js';
 import { getTodayString } from './prng.js';
 
 const PASSWORD = 'skyr-me'; // obscurity only — visible in DevTools
 const AUTH_COOKIE = 'daily_games_auth';
-const STATE_COOKIE = 'pairs_state';
+const PAIRS_COOKIE = 'pairs_state';
+const BREW_COOKIE = 'brew_state';
 
 // ── Cookie helpers ───────────────────────────────────────────────────────────
 
@@ -27,11 +29,11 @@ function setAuthed() {
   setCookie(AUTH_COOKIE, btoa(PASSWORD), 365);
 }
 
-// ── Game state cookie ────────────────────────────────────────────────────────
+// ── Game state cookies ───────────────────────────────────────────────────────
 
-function loadState(today) {
+function loadState(cookieName, today) {
   try {
-    const raw = getCookie(STATE_COOKIE);
+    const raw = getCookie(cookieName);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (data.date !== today) return null;
@@ -41,21 +43,21 @@ function loadState(today) {
   }
 }
 
-function saveState(patch) {
+function saveState(cookieName, patch) {
   const today = getTodayString();
-  let data = loadState(today) || { date: today, matched: [], completed: false, streak: 0, lastCompleted: null };
+  let data = loadState(cookieName, today) || { date: today, completed: false, streak: 0, lastCompleted: null };
   Object.assign(data, patch);
-  setCookie(STATE_COOKIE, JSON.stringify(data), 30);
+  setCookie(cookieName, JSON.stringify(data), 30);
 }
 
 function computeNewStreak(saved) {
-  const today = getTodayString();
   if (!saved?.lastCompleted) return 1;
-  const last = new Date(saved.lastCompleted);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const wasYesterday = last.toLocaleDateString('sv') === yesterday.toLocaleDateString('sv');
-  return wasYesterday ? (saved.streak || 0) + 1 : 1;
+  const today = getTodayString();
+  // Anchor to local noon so DST transitions don't shift the date.
+  const d = new Date(`${today}T12:00`);
+  d.setDate(d.getDate() - 1);
+  const yesterday = d.toLocaleDateString('sv');
+  return saved.lastCompleted === yesterday ? (saved.streak || 0) + 1 : 1;
 }
 
 // ── Tab routing ──────────────────────────────────────────────────────────────
@@ -63,14 +65,27 @@ function computeNewStreak(saved) {
 const gameInits = {
   pairs: (el) => {
     const today = getTodayString();
-    const saved = loadState(today);
     initPairsGame(el, {
-      loadState: (d) => loadState(d),
-      saveMatched: (matched) => saveState({ matched }),
+      loadState: (d) => loadState(PAIRS_COOKIE, d),
+      saveMatched: (matched) => saveState(PAIRS_COOKIE, { matched }),
       markComplete: () => {
-        const saved = loadState(today);
-        const streak = computeNewStreak(saved);
-        saveState({ completed: true, lastCompleted: today, streak });
+        const prior = loadState(PAIRS_COOKIE, today);
+        if (prior?.completed) return;
+        const streak = computeNewStreak(prior);
+        saveState(PAIRS_COOKIE, { completed: true, lastCompleted: today, streak });
+      },
+    });
+  },
+  brew: (el) => {
+    const today = getTodayString();
+    initBrewGame(el, {
+      loadState: (d) => loadState(BREW_COOKIE, d),
+      saveProgress: (progress) => saveState(BREW_COOKIE, { progress }),
+      markComplete: () => {
+        const prior = loadState(BREW_COOKIE, today);
+        if (prior?.completed) return;
+        const streak = computeNewStreak(prior);
+        saveState(BREW_COOKIE, { completed: true, lastCompleted: today, streak });
       },
     });
   },

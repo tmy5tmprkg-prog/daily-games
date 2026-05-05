@@ -37,10 +37,12 @@ export function countPerfectMatchings(emojis, adj, matched) {
   return count;
 }
 
+// Prunes non-solution edges one at a time until the perfect matching is unique.
+// Always succeeds: in the worst case every non-solution edge is removed, leaving
+// only the solution itself (which is trivially the unique matching).
 export function enforceUniqueness(grid16, solution, adj) {
   const solutionEdges = new Set(solution.map(([a, b]) => edgeKey(a.id, b.id)));
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (countPerfectMatchings(grid16, adj, new Set()) === 1) return true;
+  while (countPerfectMatchings(grid16, adj, new Set()) > 1) {
     let pruned = false;
     outer: for (const e of grid16) {
       for (const nId of [...(adj.get(e.id) || [])]) {
@@ -52,14 +54,14 @@ export function enforceUniqueness(grid16, solution, adj) {
         }
       }
     }
-    if (!pruned) break;
+    if (!pruned) break; // unreachable in practice; guards against infinite loop
   }
-  return countPerfectMatchings(grid16, adj, new Set()) === 1;
 }
 
-// Counts constraint-propagation rounds needed to solve the puzzle.
-// A uniquely-solvable puzzle always terminates (no backtracking is ever truly
-// required — see comment on generatePuzzle). Higher rounds = harder.
+// Counts constraint-propagation rounds needed to solve the puzzle: each round
+// removes every vertex with exactly one remaining neighbor (forced pair).
+// Returns Infinity if no vertex is ever forced (shouldn't happen for puzzles
+// with a unique perfect matching). Higher rounds = harder.
 export function computeCPD(adj) {
   const rem = new Map();
   for (const [id, nbrs] of adj) rem.set(id, new Set(nbrs));
@@ -125,7 +127,7 @@ export function generatePuzzle(dateStr) {
     if (!fallback) fallback = puzzle;
     // CPD ≥ 2: player must first solve the obvious pairs, then use those to deduce
     // the ambiguous ones — plus misleading non-solution edges add red-herring friction.
-    // (CPD ≥ 3 is mathematically impossible for uniquely-solvable puzzles.)
+    // Empirically, this pool only produces CPD ∈ {1, 2} (73k-puzzle survey: ~68% / ~32%).
     if (computeCPD(puzzle.adj) >= 2) return puzzle;
   }
   if (fallback) return fallback;
@@ -182,65 +184,85 @@ function updateStatus() {
 
 // ── Interaction ──────────────────────────────────────────────────────────────
 
+function nextPaletteColor() {
+  const c = state.paletteIdx;
+  state.paletteIdx = (state.paletteIdx + 1) % PAIR_COLORS.length;
+  return c;
+}
+
+function setPending(id, colorIdx) {
+  state.pending = id;
+  state.pendingColor = colorIdx;
+  applyVisualState(id);
+}
+
+function clearPending() {
+  const id = state.pending;
+  state.pending = null;
+  if (id != null) applyVisualState(id);
+}
+
+function formPair(a, b, colorIdx) {
+  state.pairs.set(a, { partner: b, colorIdx });
+  state.pairs.set(b, { partner: a, colorIdx });
+  applyVisualState(a);
+  applyVisualState(b);
+}
+
+function breakPair(id) {
+  const { partner, colorIdx } = state.pairs.get(id);
+  state.pairs.delete(id);
+  state.pairs.delete(partner);
+  applyVisualState(id);
+  applyVisualState(partner);
+  return { partner, colorIdx };
+}
+
 function handleCellTap(id) {
-  const { pairs, pending } = state;
-  const isPaired  = pairs.has(id);
-  const isPending = pending === id;
+  const isPending = state.pending === id;
+  const isPaired  = state.pairs.has(id);
 
   if (isPending) {
-    state.pending = null;
-    applyVisualState(id);
-    return;
-  }
-
-  if (!isPaired && pending === null) {
-    state.pendingColor = state.paletteIdx;
-    state.paletteIdx++;
-    state.pending = id;
-    applyVisualState(id);
-    return;
-  }
-
-  if (!isPaired && pending !== null) {
+    clearPending();
+  } else if (!isPaired && state.pending === null) {
+    setPending(id, nextPaletteColor());
+  } else if (!isPaired && state.pending !== null) {
+    const prevId = state.pending;
     const colorIdx = state.pendingColor;
-    const prevId = pending;
-    pairs.set(prevId, { partner: id, colorIdx });
-    pairs.set(id,     { partner: prevId, colorIdx });
     state.pending = null;
-    applyVisualState(prevId);
-    applyVisualState(id);
+    formPair(prevId, id, colorIdx);
     updateStatus();
     checkWin();
-    return;
-  }
-
-  if (isPaired && pending === null) {
-    // partner becomes the new pending and inherits the broken pair's color
-    const { partner, colorIdx } = pairs.get(id);
-    pairs.delete(id);
-    pairs.delete(partner);
-    state.pending = partner;
-    state.pendingColor = colorIdx;
-    applyVisualState(id);
-    applyVisualState(partner);
+  } else if (isPaired && state.pending === null) {
+    // Partner becomes the new pending and inherits the broken pair's color.
+    const { partner, colorIdx } = breakPair(id);
+    setPending(partner, colorIdx);
     updateStatus();
-    return;
+  } else {
+    // Paired + pending: pending steals id; id's previous partner goes idle.
+    const prevId = state.pending;
+    const colorIdx = state.pendingColor;
+    breakPair(id);
+    state.pending = null;
+    formPair(prevId, id, colorIdx);
+    updateStatus();
+    checkWin();
   }
 
-  // isPaired && pending !== null: pending steals id from its partner; partner goes idle
-  const { partner: partnerOfA } = pairs.get(id);
-  const colorIdx = state.pendingColor;
-  const prevId = pending;
-  pairs.delete(id);
-  pairs.delete(partnerOfA);
-  pairs.set(prevId, { partner: id, colorIdx });
-  pairs.set(id,     { partner: prevId, colorIdx });
-  state.pending = null;
-  applyVisualState(prevId);
-  applyVisualState(id);
-  applyVisualState(partnerOfA);
-  updateStatus();
-  checkWin();
+  persistState();
+}
+
+function persistState() {
+  if (!cookieCallbacks?.saveMatched) return;
+  const seen = new Set();
+  const pairs = [];
+  for (const [id, { partner, colorIdx }] of state.pairs) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    seen.add(partner);
+    pairs.push([id, partner, colorIdx]);
+  }
+  cookieCallbacks.saveMatched({ pairs, paletteIdx: state.paletteIdx });
 }
 
 // ── Win check ────────────────────────────────────────────────────────────────
@@ -269,6 +291,7 @@ function resetBoard() {
   state.pendingColor = 0;
   state.paletteIdx = 0;
   renderGrid();
+  persistState();
 }
 
 // ── Win screen ───────────────────────────────────────────────────────────────
@@ -308,7 +331,10 @@ function attachOverlayListeners(el) {
 }
 
 function buildShareText() {
-  const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  // Use the puzzle's date, not wall-clock — avoids drift if the user shares
+  // after midnight on the day they solved.
+  const d = new Date(`${state.puzzleDate}T12:00`);
+  const date = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const squares = '🟩'.repeat(8);
   return `Emoji Pairs – ${date}\n8/8 ✅  ${squares}\n${SITE_URL}`;
 }
@@ -360,12 +386,21 @@ export function initPairsGame(el, cookies) {
   state = {
     grid: puzzle.grid,
     solutionMap: puzzle.solutionMap,
+    puzzleDate: today,
     pairs: new Map(),
     pending: null,
     pendingColor: 0,
     paletteIdx: 0,
     cellMap: new Map(),
   };
+
+  if (saved?.matched?.pairs) {
+    state.paletteIdx = saved.matched.paletteIdx ?? 0;
+    for (const [a, b, colorIdx] of saved.matched.pairs) {
+      state.pairs.set(a, { partner: b, colorIdx });
+      state.pairs.set(b, { partner: a, colorIdx });
+    }
+  }
 
   const tmpl = document.getElementById('pairs-template');
   const content = tmpl.content.cloneNode(true);

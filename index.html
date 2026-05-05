@@ -36,6 +36,9 @@
       <button class="tab active" role="tab" data-game="pairs" aria-selected="true">
         Pairs 🃏
       </button>
+      <button class="tab" role="tab" data-game="brew" aria-selected="false">
+        Brew 🧙
+      </button>
     </nav>
     <main id="game-area" role="main"></main>
   </div>
@@ -61,6 +64,40 @@
         <button class="win-close" aria-label="Close">✕</button>
         <h2>🎉 Solved!</h2>
         <p>You matched all 8 pairs.</p>
+        <div class="streak"></div>
+        <button class="share-btn">Share result</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Brew game template -->
+  <template id="brew-template">
+    <div class="brew-header">
+      <h2>Brew 🧙</h2>
+      <div class="brew-meta">
+        <span class="brew-date"></span>
+        <span class="brew-streak"></span>
+      </div>
+    </div>
+    <div class="brew-target">
+      <span class="brew-mode-badge">Daily</span>
+      <span class="brew-target-label">Goal</span>
+      <span class="brew-target-emoji" aria-live="polite"></span>
+    </div>
+    <div class="brew-pool" role="grid" aria-label="Discovered emojis"></div>
+    <div class="brew-controls">
+      <span class="brew-moves" aria-live="polite">Moves: 0</span>
+      <button class="brew-reset-btn" type="button" aria-label="Reset board">↺</button>
+      <button class="brew-new-btn" type="button" aria-label="Generate a new practice puzzle">🎲 New puzzle</button>
+    </div>
+    <p class="brew-hint">Drag one emoji onto another to combine them.</p>
+
+    <div class="brew-win-overlay win-overlay" hidden role="dialog" aria-modal="true" aria-label="Puzzle complete">
+      <canvas class="confetti-canvas"></canvas>
+      <div class="win-card">
+        <button class="win-close" aria-label="Close">✕</button>
+        <h2 class="brew-win-title">🎉 Brewed!</h2>
+        <p class="brew-win-moves"></p>
         <div class="streak"></div>
         <button class="share-btn">Share result</button>
       </div>
