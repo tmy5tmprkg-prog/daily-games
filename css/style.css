@@ -297,16 +297,16 @@ html, body {
 }
 .share-btn:hover { opacity: 0.88; }
 
-/* ── Brew game ── */
+/* ── Elements game ── */
 
-.brew-header {
+.elements-header {
   text-align: center;
   margin-bottom: 16px;
 }
 
-.brew-header h2 { font-size: 1.2rem; }
+.elements-header h2 { font-size: 1.2rem; }
 
-.brew-meta {
+.elements-meta {
   display: flex;
   justify-content: center;
   gap: 16px;
@@ -315,7 +315,40 @@ html, body {
   color: var(--text-muted);
 }
 
-.brew-target {
+.elements-difficulty {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 16px;
+  max-width: 360px;
+}
+
+.elements-tier-pill {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  min-height: 40px;
+}
+
+.elements-tier-pill:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.elements-tier-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.elements-target {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -330,7 +363,7 @@ html, body {
   min-width: 140px;
 }
 
-.brew-mode-badge {
+.elements-mode-badge {
   position: absolute;
   top: -10px;
   right: -10px;
@@ -345,23 +378,23 @@ html, body {
   border: 2px solid var(--bg);
 }
 
-.brew-mode-badge.brew-mode-practice {
+.elements-mode-badge.elements-mode-practice {
   background: var(--accent2);
 }
 
-.brew-target-label {
+.elements-target-label {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 
-.brew-target-emoji {
+.elements-target-emoji {
   font-size: clamp(2.4rem, 9vw, 3.4rem);
   line-height: 1;
 }
 
-.brew-pool {
+.elements-pool {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
   gap: clamp(6px, 2vw, 10px);
@@ -369,7 +402,7 @@ html, body {
   margin: 0 auto 16px;
 }
 
-.brew-cell {
+.elements-cell {
   aspect-ratio: 1;
   background: var(--surface);
   border: 2px solid var(--border);
@@ -387,42 +420,42 @@ html, body {
   line-height: 1;
 }
 
-.brew-cell:hover { background: var(--surface2); }
-.brew-cell:active { cursor: grabbing; }
+.elements-cell:hover { background: var(--surface2); }
+.elements-cell:active { cursor: grabbing; }
 
-.brew-cell-dragging {
+.elements-cell-dragging {
   opacity: 0.35;
 }
 
-.brew-cell-hover {
+.elements-cell-hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--surface));
   transform: scale(1.05);
 }
 
-.brew-cell-target {
+.elements-cell-target {
   border-color: var(--success);
   background: color-mix(in srgb, var(--success) 18%, var(--surface));
 }
 
-@keyframes brew-pop {
+@keyframes elements-pop {
   0%   { transform: scale(0.4); opacity: 0; }
   60%  { transform: scale(1.2); opacity: 1; }
   100% { transform: scale(1);   opacity: 1; }
 }
 
-.brew-cell-pop { animation: brew-pop 0.4s ease-out; }
+.elements-cell-pop { animation: elements-pop 0.4s ease-out; }
 
-@keyframes brew-shake {
+@keyframes elements-shake {
   0%, 100% { transform: translateX(0); }
   25%      { transform: translateX(-4px); }
   50%      { transform: translateX(4px); }
   75%      { transform: translateX(-3px); }
 }
 
-.brew-cell-shake { animation: brew-shake 0.35s ease; border-color: var(--danger); }
+.elements-cell-shake { animation: elements-shake 0.35s ease; border-color: var(--danger); }
 
-.brew-ghost {
+.elements-ghost {
   position: fixed;
   pointer-events: none;
   z-index: 300;
@@ -432,7 +465,7 @@ html, body {
   line-height: 1;
 }
 
-.brew-controls {
+.elements-controls {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -440,13 +473,13 @@ html, body {
   margin-bottom: 8px;
 }
 
-.brew-moves {
+.elements-moves {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
 
-.brew-reset-btn,
-.brew-new-btn {
+.elements-reset-btn,
+.elements-new-btn {
   background: none;
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -457,19 +490,27 @@ html, body {
   transition: color 0.15s, border-color 0.15s, background 0.15s;
   line-height: 1;
 }
-.brew-reset-btn { padding: 6px 14px; font-size: 1rem; }
-.brew-reset-btn:hover,
-.brew-new-btn:hover {
+.elements-reset-btn { padding: 6px 14px; font-size: 1rem; }
+.elements-reset-btn:hover,
+.elements-new-btn:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }
-.brew-new-btn:active {
+.elements-new-btn:active {
   background: var(--surface2);
 }
 
-.brew-hint {
+.elements-hint {
   text-align: center;
   color: var(--text-muted);
   font-size: 0.8rem;
   margin-top: 8px;
+}
+
+.elements-win-tier {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
 }

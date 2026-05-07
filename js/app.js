@@ -1,11 +1,13 @@
 import { initPairsGame } from './game-pairs.js';
-import { initBrewGame } from './game-brew.js';
+import { initElementsGame } from './game-elements.js';
 import { getTodayString } from './prng.js';
 
 const PASSWORD = 'skyr-me'; // obscurity only — visible in DevTools
 const AUTH_COOKIE = 'daily_games_auth';
 const PAIRS_COOKIE = 'pairs_state';
-const BREW_COOKIE = 'brew_state';
+const ELEMENTS_COOKIE = 'elements_state';
+
+const ELEMENTS_TIERS = ['easy', 'medium', 'hard'];
 
 // ── Cookie helpers ───────────────────────────────────────────────────────────
 
@@ -50,14 +52,90 @@ function saveState(cookieName, patch) {
   setCookie(cookieName, JSON.stringify(data), 30);
 }
 
-function computeNewStreak(saved) {
-  if (!saved?.lastCompleted) return 1;
+function computeNewStreak(prior) {
+  if (!prior?.lastCompleted) return 1;
   const today = getTodayString();
   // Anchor to local noon so DST transitions don't shift the date.
   const d = new Date(`${today}T12:00`);
   d.setDate(d.getDate() - 1);
   const yesterday = d.toLocaleDateString('sv');
-  return saved.lastCompleted === yesterday ? (saved.streak || 0) + 1 : 1;
+  return prior.lastCompleted === yesterday ? (prior.streak || 0) + 1 : 1;
+}
+
+// ── Elements per-tier persistence ────────────────────────────────────────────
+//
+// Schema for the elements cookie (one cookie shared by all three tiers,
+// reset whenever `date` changes):
+//   {
+//     date: '2026-05-06',
+//     tiers: {
+//       easy:   { progress, completed, lastCompleted, streak },
+//       medium: { ... },
+//       hard:   { ... },
+//     },
+//   }
+
+function emptyElementsState(today) {
+  const tiers = {};
+  for (const t of ELEMENTS_TIERS) {
+    tiers[t] = { progress: null, completed: false, lastCompleted: null, streak: 0 };
+  }
+  return { date: today, tiers };
+}
+
+function loadElementsState() {
+  const today = getTodayString();
+  try {
+    const raw = getCookie(ELEMENTS_COOKIE);
+    if (!raw) return emptyElementsState(today);
+    const data = JSON.parse(raw);
+    if (!data.tiers) return emptyElementsState(today);
+    if (data.date !== today) {
+      // New day — preserve streaks and lastCompleted, drop in-progress state.
+      const fresh = emptyElementsState(today);
+      for (const t of ELEMENTS_TIERS) {
+        const prior = data.tiers[t] || {};
+        fresh.tiers[t].lastCompleted = prior.lastCompleted ?? null;
+        fresh.tiers[t].streak = prior.streak ?? 0;
+      }
+      return fresh;
+    }
+    // Same day — fill missing tiers defensively.
+    for (const t of ELEMENTS_TIERS) {
+      if (!data.tiers[t]) data.tiers[t] = { progress: null, completed: false, lastCompleted: null, streak: 0 };
+    }
+    return data;
+  } catch {
+    return emptyElementsState(today);
+  }
+}
+
+function saveElementsState(data) {
+  setCookie(ELEMENTS_COOKIE, JSON.stringify(data), 30);
+}
+
+function elementsLoadTier(_today, tier) {
+  const data = loadElementsState();
+  return data.tiers[tier] || null;
+}
+
+function elementsSaveProgress(tier, progress) {
+  const data = loadElementsState();
+  if (!data.tiers[tier]) return;
+  data.tiers[tier].progress = progress;
+  saveElementsState(data);
+}
+
+function elementsMarkComplete(tier) {
+  const data = loadElementsState();
+  const tierData = data.tiers[tier];
+  if (!tierData || tierData.completed) return;
+  const today = getTodayString();
+  const streak = computeNewStreak({ lastCompleted: tierData.lastCompleted, streak: tierData.streak });
+  tierData.completed = true;
+  tierData.lastCompleted = today;
+  tierData.streak = streak;
+  saveElementsState(data);
 }
 
 // ── Tab routing ──────────────────────────────────────────────────────────────
@@ -76,17 +154,11 @@ const gameInits = {
       },
     });
   },
-  brew: (el) => {
-    const today = getTodayString();
-    initBrewGame(el, {
-      loadState: (d) => loadState(BREW_COOKIE, d),
-      saveProgress: (progress) => saveState(BREW_COOKIE, { progress }),
-      markComplete: () => {
-        const prior = loadState(BREW_COOKIE, today);
-        if (prior?.completed) return;
-        const streak = computeNewStreak(prior);
-        saveState(BREW_COOKIE, { completed: true, lastCompleted: today, streak });
-      },
+  elements: (el) => {
+    initElementsGame(el, {
+      loadTier: elementsLoadTier,
+      saveProgress: elementsSaveProgress,
+      markComplete: elementsMarkComplete,
     });
   },
 };

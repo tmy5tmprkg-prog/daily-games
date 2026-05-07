@@ -1,7 +1,18 @@
-import { BREW_EMOJI_POOL, getCombineResult, getEmoji, generateBrewPuzzle } from '../data/emoji-brew.js';
+import {
+  ELEMENTS_EMOJI_POOL,
+  STARTERS,
+  TIERS,
+  TIER_LABELS,
+  getCombineResult,
+  getEmoji,
+  generateElementsPuzzle,
+  loadElements,
+} from '../data/emoji-elements.js';
 import { getTodayString } from './prng.js';
 
 const SITE_URL = 'https://tmy5tmprkg-prog.github.io/daily-games';
+const DEFAULT_TIER = 'medium';
+const TIER_SESSION_KEY = 'elementsActiveTier';
 
 let state = null;
 let containerEl = null;
@@ -12,21 +23,21 @@ let drag = null; // { sourceId, pointerId, ghostEl, hoverId }
 
 function renderTarget() {
   const target = getEmoji(state.targetId);
-  const targetEl = containerEl.querySelector('.brew-target-emoji');
+  const targetEl = containerEl.querySelector('.elements-target-emoji');
   targetEl.textContent = target.emoji;
   targetEl.setAttribute('aria-label', target.label);
 }
 
 function updateMoves() {
-  const movesEl = containerEl.querySelector('.brew-moves');
+  const movesEl = containerEl.querySelector('.elements-moves');
   movesEl.textContent = `Moves: ${state.moves}`;
 }
 
 function renderPool() {
-  const poolEl = containerEl.querySelector('.brew-pool');
+  const poolEl = containerEl.querySelector('.elements-pool');
   poolEl.innerHTML = '';
   state.cellMap.clear();
-  // Render starters first (dim them subtly so the player can tell), then discoveries.
+  // Render starters first, then discoveries in insertion order.
   const starterSet = new Set(state.starters);
   const ordered = [
     ...state.starters,
@@ -43,13 +54,13 @@ function createCell(id) {
   const emoji = getEmoji(id);
   const cell = document.createElement('button');
   cell.type = 'button';
-  cell.className = 'brew-cell';
+  cell.className = 'elements-cell';
   cell.dataset.id = id;
   cell.textContent = emoji.emoji;
   cell.setAttribute('aria-label', emoji.label);
   cell.setAttribute('title', emoji.label);
   if (id === state.targetId && state.discovered.has(id)) {
-    cell.classList.add('brew-cell-target');
+    cell.classList.add('elements-cell-target');
   }
   attachDragHandlers(cell);
   return cell;
@@ -58,15 +69,15 @@ function createCell(id) {
 function popInCell(id) {
   const cell = state.cellMap.get(id);
   if (!cell) return;
-  cell.classList.add('brew-cell-pop');
-  cell.addEventListener('animationend', () => cell.classList.remove('brew-cell-pop'), { once: true });
+  cell.classList.add('elements-cell-pop');
+  cell.addEventListener('animationend', () => cell.classList.remove('elements-cell-pop'), { once: true });
 }
 
 function shakeCell(id) {
   const cell = state.cellMap.get(id);
   if (!cell) return;
-  cell.classList.add('brew-cell-shake');
-  cell.addEventListener('animationend', () => cell.classList.remove('brew-cell-shake'), { once: true });
+  cell.classList.add('elements-cell-shake');
+  cell.addEventListener('animationend', () => cell.classList.remove('elements-cell-shake'), { once: true });
 }
 
 // ── Drag interaction (Pointer Events) ────────────────────────────────────────
@@ -85,12 +96,12 @@ function onPointerDown(e) {
   const id = cell.dataset.id;
   cell.setPointerCapture(e.pointerId);
   const ghost = document.createElement('div');
-  ghost.className = 'brew-ghost';
+  ghost.className = 'elements-ghost';
   ghost.textContent = getEmoji(id).emoji;
   document.body.appendChild(ghost);
   drag = { sourceId: id, pointerId: e.pointerId, ghostEl: ghost, hoverId: null };
   positionGhost(e.clientX, e.clientY);
-  cell.classList.add('brew-cell-dragging');
+  cell.classList.add('elements-cell-dragging');
 }
 
 function onPointerMove(e) {
@@ -102,10 +113,10 @@ function onPointerMove(e) {
   if (overId !== drag.hoverId) {
     if (drag.hoverId) {
       const prev = state.cellMap.get(drag.hoverId);
-      prev?.classList.remove('brew-cell-hover');
+      prev?.classList.remove('elements-cell-hover');
     }
     if (overId && overId !== drag.sourceId) {
-      overCell.classList.add('brew-cell-hover');
+      overCell.classList.add('elements-cell-hover');
       drag.hoverId = overId;
     } else {
       drag.hoverId = null;
@@ -131,8 +142,8 @@ function cancelDrag() {
 function cleanupDrag() {
   if (!drag) return;
   drag.ghostEl?.remove();
-  if (drag.hoverId) state.cellMap.get(drag.hoverId)?.classList.remove('brew-cell-hover');
-  state.cellMap.get(drag.sourceId)?.classList.remove('brew-cell-dragging');
+  if (drag.hoverId) state.cellMap.get(drag.hoverId)?.classList.remove('elements-cell-hover');
+  state.cellMap.get(drag.sourceId)?.classList.remove('elements-cell-dragging');
   drag = null;
 }
 
@@ -148,7 +159,7 @@ function cellUnderPoint(x, y) {
   const ghost = drag?.ghostEl;
   if (ghost) ghost.style.pointerEvents = 'none';
   const el = document.elementFromPoint(x, y);
-  return el?.closest('.brew-cell');
+  return el?.closest('.elements-cell');
 }
 
 // ── Combine logic ────────────────────────────────────────────────────────────
@@ -160,22 +171,18 @@ function attemptCombine(idA, idB) {
     shakeCell(idB);
     return;
   }
-  if (state.discovered.has(result)) {
-    // Valid pair, but the result is already in the pool — no-op.
-    return;
-  }
+  if (state.discovered.has(result)) return;
   state.discovered.add(result);
   state.moves++;
 
-  // Append the new cell to the pool with a pop animation.
-  const poolEl = containerEl.querySelector('.brew-pool');
+  const poolEl = containerEl.querySelector('.elements-pool');
   const cell = createCell(result);
   poolEl.appendChild(cell);
   state.cellMap.set(result, cell);
   popInCell(result);
 
   if (result === state.targetId) {
-    state.cellMap.get(result)?.classList.add('brew-cell-target');
+    state.cellMap.get(result)?.classList.add('elements-cell-target');
   }
 
   updateMoves();
@@ -191,7 +198,7 @@ function attemptCombine(idA, idB) {
 function persistState() {
   if (!state.isDaily) return;
   if (!cookieCallbacks?.saveProgress) return;
-  cookieCallbacks.saveProgress({
+  cookieCallbacks.saveProgress(state.tier, {
     discovered: [...state.discovered],
     moves: state.moves,
   });
@@ -210,17 +217,20 @@ function resetBoard() {
 // ── Win screen ───────────────────────────────────────────────────────────────
 
 function showWinScreen() {
-  const overlay = containerEl.querySelector('.brew-win-overlay');
+  const overlay = containerEl.querySelector('.elements-win-overlay');
   if (!overlay.hidden) return;
   overlay.hidden = false;
-  const movesEl = overlay.querySelector('.brew-win-moves');
+  const movesEl = overlay.querySelector('.elements-win-moves');
   movesEl.textContent = `You: ${state.moves} moves · Best: ${state.par}`;
-  const titleEl = overlay.querySelector('.brew-win-title');
-  if (titleEl) titleEl.textContent = state.isDaily ? '🎉 Brewed!' : '✨ Solved!';
+  const titleEl = overlay.querySelector('.elements-win-title');
+  if (titleEl) titleEl.textContent = state.isDaily ? '🎉 Combined!' : '✨ Solved!';
+  const tierBadge = overlay.querySelector('.elements-win-tier');
+  if (tierBadge) tierBadge.textContent = TIER_LABELS[state.tier] || '';
   const shareBtn = overlay.querySelector('.share-btn');
   if (shareBtn) shareBtn.hidden = !state.isDaily;
   startConfetti(overlay.querySelector('.confetti-canvas'));
-  if (state.isDaily && cookieCallbacks) cookieCallbacks.markComplete();
+  if (state.isDaily && cookieCallbacks) cookieCallbacks.markComplete(state.tier);
+  refreshStreakDisplay();
 }
 
 function flashCopied(btn) {
@@ -240,7 +250,7 @@ function copyToClipboard(text) {
 }
 
 function attachOverlayListeners(el) {
-  const overlay = el.querySelector('.brew-win-overlay');
+  const overlay = el.querySelector('.elements-win-overlay');
   overlay.querySelector('.win-close').addEventListener('click', () => { overlay.hidden = true; });
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.hidden = true;
@@ -255,7 +265,8 @@ function buildShareText() {
   const d = new Date(`${state.puzzleDate}T12:00`);
   const date = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const targetEmoji = getEmoji(state.targetId).emoji;
-  return `Brew 🧙 – ${date}\n${targetEmoji} ${state.moves} moves (best: ${state.par})\n${SITE_URL}`;
+  const tierLabel = TIER_LABELS[state.tier];
+  return `Elements 🜂 – ${date} (${tierLabel})\n${targetEmoji} ${state.moves} moves (best: ${state.par})\n${SITE_URL}`;
 }
 
 function startConfetti(canvas) {
@@ -292,13 +303,44 @@ function startConfetti(canvas) {
   requestAnimationFrame(tick);
 }
 
+// ── Tier switching ───────────────────────────────────────────────────────────
+
+function switchTier(newTier) {
+  if (!TIERS.includes(newTier)) return;
+  if (state?.tier === newTier) return;
+  // Persist current state before switching.
+  if (state) persistState();
+  sessionStorage.setItem(TIER_SESSION_KEY, newTier);
+  loadDailyForTier(newTier);
+  updateTierPills();
+  refreshStreakDisplay();
+}
+
+function updateTierPills() {
+  const pills = containerEl.querySelectorAll('.elements-tier-pill');
+  for (const pill of pills) {
+    pill.classList.toggle('active', pill.dataset.tier === state.tier);
+    pill.setAttribute('aria-selected', pill.dataset.tier === state.tier ? 'true' : 'false');
+  }
+}
+
+function refreshStreakDisplay() {
+  const streakEl = containerEl.querySelector('.elements-streak');
+  if (!streakEl || !cookieCallbacks?.loadTier) return;
+  const today = getTodayString();
+  const tierState = cookieCallbacks.loadTier(today, state.tier);
+  const streak = tierState?.streak || 0;
+  streakEl.textContent = streak > 0 ? `🔥 ${streak}` : '';
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
-function loadPuzzle({ seedStr, isDaily, savedProgress }) {
-  const puzzle = generateBrewPuzzle(seedStr);
+function loadPuzzle({ seedStr, tier, isDaily, savedProgress }) {
+  const puzzle = generateElementsPuzzle(seedStr, tier);
   state = {
     puzzleDate: isDaily ? seedStr : getTodayString(),
     seedStr,
+    tier,
     isDaily,
     targetId: puzzle.targetId,
     par: puzzle.par,
@@ -311,7 +353,7 @@ function loadPuzzle({ seedStr, isDaily, savedProgress }) {
     for (const id of savedProgress.discovered) state.discovered.add(id);
     state.moves = savedProgress.moves || 0;
   }
-  const overlay = containerEl.querySelector('.brew-win-overlay');
+  const overlay = containerEl.querySelector('.elements-win-overlay');
   if (overlay) overlay.hidden = true;
   renderTarget();
   renderPool();
@@ -319,43 +361,62 @@ function loadPuzzle({ seedStr, isDaily, savedProgress }) {
   updateModeBadge();
 }
 
+function loadDailyForTier(tier) {
+  const today = getTodayString();
+  const saved = cookieCallbacks?.loadTier?.(today, tier);
+  loadPuzzle({
+    seedStr: today,
+    tier,
+    isDaily: true,
+    savedProgress: saved?.progress,
+  });
+  if (saved?.completed) setTimeout(showWinScreen, 100);
+}
+
 function updateModeBadge() {
-  const badge = containerEl.querySelector('.brew-mode-badge');
+  const badge = containerEl.querySelector('.elements-mode-badge');
   if (!badge) return;
   badge.textContent = state.isDaily ? 'Daily' : 'Practice';
-  badge.classList.toggle('brew-mode-practice', !state.isDaily);
+  badge.classList.toggle('elements-mode-practice', !state.isDaily);
 }
 
-function newPuzzle() {
+function newPractice() {
   const seed = `practice:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-  loadPuzzle({ seedStr: seed, isDaily: false });
+  loadPuzzle({ seedStr: seed, tier: state.tier, isDaily: false });
 }
 
-export function initBrewGame(el, cookies) {
+export async function initElementsGame(el, cookies) {
+  await loadElements();
+
   containerEl = el;
   cookieCallbacks = cookies;
 
-  const today = getTodayString();
-  const saved = cookies.loadState(today);
-
-  const tmpl = document.getElementById('brew-template');
+  const tmpl = document.getElementById('elements-template');
   el.innerHTML = '';
   el.appendChild(tmpl.content.cloneNode(true));
 
-  const dateEl = el.querySelector('.brew-date');
+  const dateEl = el.querySelector('.elements-date');
   if (dateEl) {
     dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
   }
-  const streakEl = el.querySelector('.brew-streak');
-  if (streakEl && saved?.streak) streakEl.textContent = `🔥 ${saved.streak}`;
 
-  el.querySelector('.brew-reset-btn').addEventListener('click', resetBoard);
-  el.querySelector('.brew-new-btn').addEventListener('click', newPuzzle);
+  // Difficulty pills
+  for (const pill of el.querySelectorAll('.elements-tier-pill')) {
+    pill.addEventListener('click', () => switchTier(pill.dataset.tier));
+  }
+
+  el.querySelector('.elements-reset-btn').addEventListener('click', resetBoard);
+  el.querySelector('.elements-new-btn').addEventListener('click', newPractice);
   attachOverlayListeners(el);
 
-  loadPuzzle({ seedStr: today, isDaily: true, savedProgress: saved?.progress });
-
-  if (saved?.completed) {
-    setTimeout(showWinScreen, 100);
-  }
+  const initialTier = TIERS.includes(sessionStorage.getItem(TIER_SESSION_KEY))
+    ? sessionStorage.getItem(TIER_SESSION_KEY)
+    : DEFAULT_TIER;
+  loadDailyForTier(initialTier);
+  updateTierPills();
+  refreshStreakDisplay();
 }
+
+// Re-export for completeness (used nowhere else, but keeps the shape parallel
+// to other game modules that surface their dataset).
+export { ELEMENTS_EMOJI_POOL };

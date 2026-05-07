@@ -11,7 +11,7 @@
 <body>
 
   <!-- Password gate -->
-  <div id="password-gate">
+  <div id="password-gate" hidden>
     <div class="pw-card">
       <h1>🎮 Daily Games</h1>
       <p>Enter the password to play</p>
@@ -36,8 +36,8 @@
       <button class="tab active" role="tab" data-game="pairs" aria-selected="true">
         Pairs 🃏
       </button>
-      <button class="tab" role="tab" data-game="brew" aria-selected="false">
-        Brew 🧙
+      <button class="tab" role="tab" data-game="elements" aria-selected="false">
+        Elements 🜂
       </button>
     </nav>
     <main id="game-area" role="main"></main>
@@ -70,34 +70,40 @@
     </div>
   </template>
 
-  <!-- Brew game template -->
-  <template id="brew-template">
-    <div class="brew-header">
-      <h2>Brew 🧙</h2>
-      <div class="brew-meta">
-        <span class="brew-date"></span>
-        <span class="brew-streak"></span>
+  <!-- Elements game template -->
+  <template id="elements-template">
+    <div class="elements-header">
+      <h2>Elements 🜂</h2>
+      <div class="elements-meta">
+        <span class="elements-date"></span>
+        <span class="elements-streak"></span>
       </div>
     </div>
-    <div class="brew-target">
-      <span class="brew-mode-badge">Daily</span>
-      <span class="brew-target-label">Goal</span>
-      <span class="brew-target-emoji" aria-live="polite"></span>
+    <div class="elements-difficulty" role="tablist" aria-label="Difficulty">
+      <button class="elements-tier-pill" type="button" role="tab" data-tier="easy">Easy</button>
+      <button class="elements-tier-pill" type="button" role="tab" data-tier="medium">Medium</button>
+      <button class="elements-tier-pill" type="button" role="tab" data-tier="hard">Hard</button>
     </div>
-    <div class="brew-pool" role="grid" aria-label="Discovered emojis"></div>
-    <div class="brew-controls">
-      <span class="brew-moves" aria-live="polite">Moves: 0</span>
-      <button class="brew-reset-btn" type="button" aria-label="Reset board">↺</button>
-      <button class="brew-new-btn" type="button" aria-label="Generate a new practice puzzle">🎲 New puzzle</button>
+    <div class="elements-target">
+      <span class="elements-mode-badge">Daily</span>
+      <span class="elements-target-label">Goal</span>
+      <span class="elements-target-emoji" aria-live="polite"></span>
     </div>
-    <p class="brew-hint">Drag one emoji onto another to combine them.</p>
+    <div class="elements-pool" role="grid" aria-label="Discovered emojis"></div>
+    <div class="elements-controls">
+      <span class="elements-moves" aria-live="polite">Moves: 0</span>
+      <button class="elements-reset-btn" type="button" aria-label="Reset board">↺</button>
+      <button class="elements-new-btn" type="button" aria-label="Generate a new practice puzzle">🎲 New puzzle</button>
+    </div>
+    <p class="elements-hint">Drag one emoji onto another to combine them.</p>
 
-    <div class="brew-win-overlay win-overlay" hidden role="dialog" aria-modal="true" aria-label="Puzzle complete">
+    <div class="elements-win-overlay win-overlay" hidden role="dialog" aria-modal="true" aria-label="Puzzle complete">
       <canvas class="confetti-canvas"></canvas>
       <div class="win-card">
         <button class="win-close" aria-label="Close">✕</button>
-        <h2 class="brew-win-title">🎉 Brewed!</h2>
-        <p class="brew-win-moves"></p>
+        <h2 class="elements-win-title">🎉 Combined!</h2>
+        <p class="elements-win-tier"></p>
+        <p class="elements-win-moves"></p>
         <div class="streak"></div>
         <button class="share-btn">Share result</button>
       </div>

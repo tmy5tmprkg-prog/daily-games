@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Combination Curator</title>
+  <link rel="stylesheet" href="css/curator.css" />
+</head>
+<body>
+  <header>
+    <h1>Combination Curator</h1>
+    <div class="file-bar">
+      <span id="file-status">No file connected</span>
+      <button id="open-btn" type="button">Open file…</button>
+      <button id="create-btn" type="button">Create file…</button>
+      <button id="undo-btn" type="button" title="Undo (⌘Z)" disabled>Undo</button>
+      <button id="save-btn" type="button" disabled>Save</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="picker">
+      <div class="slots">
+        <button class="slot" data-slot="1" type="button"><span class="placeholder">?</span></button>
+        <span class="op">+</span>
+        <button class="slot" data-slot="2" type="button"><span class="placeholder">?</span></button>
+        <button id="reset-slots" type="button" title="Clear slots">×</button>
+      </div>
+
+      <div class="search-bar">
+        <input id="search" placeholder="Search by name or keyword (multiple words = AND)…" autocomplete="off" />
+        <label class="metric">
+          <input type="checkbox" id="metric-mean" />
+          use mean of parents (default: min)
+        </label>
+      </div>
+
+      <div id="hint" class="hint">Pick two parents to see candidate children.</div>
+      <div class="candidates" id="candidates"></div>
+    </section>
+
+    <aside class="sidebar">
+      <h2>Combinations <span id="combo-count">0</span></h2>
+      <ul id="combo-list"></ul>
+    </aside>
+  </main>
+
+  <dialog id="parent-picker">
+    <h3>Pick a parent</h3>
+    <div class="parent-grid" id="parent-grid"></div>
+    <button id="parent-cancel" type="button">Cancel</button>
+  </dialog>
+
+  <dialog id="recover-dialog">
+    <h3>Unsaved changes detected</h3>
+    <p>The previous session ended with changes that weren't written to the file. Apply them now?</p>
+    <div class="dialog-actions">
+      <button id="recover-yes" type="button">Apply</button>
+      <button id="recover-no" type="button">Discard</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/curator.js"></script>
+</body>
+</html>
