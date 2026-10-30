@@ -2,7 +2,7 @@
 
 A tiny Halloween arcade game for the GitHub Pages site. Move the pumpkin pail with your mouse or finger, catch eight pieces of candy, and avoid the veggies. Feed your friend three times to uncover the surprise.
 
-The game is available after entering the password. The Halloween Ghost Party track starts after the first interaction; use the music button to turn it off or on. The end screen shows the supplied ultrasound image.
+The game is available after entering the password. The Halloween Ghost Party track attempts to play on load; browsers that block autoplay start it on the first interaction. Use the music button to turn it off or on. The end screen shows the supplied ultrasound image.
 
 The password check is client-side and is intended as a casual gate, not secure access control.
 

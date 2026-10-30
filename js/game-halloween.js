@@ -64,6 +64,7 @@ export function initHalloweenGame(root) {
   const basketScore = root.querySelector('.basket-score');
   const message = root.querySelector('.game-message');
   const halloweenTrack = new Audio(new URL('../assets/music/halloween-ghost-party.mp3', import.meta.url));
+  halloweenTrack.autoplay = true;
   halloweenTrack.loop = true;
   halloweenTrack.preload = 'auto';
   halloweenTrack.volume = 0.42;
@@ -276,7 +277,7 @@ export function initHalloweenGame(root) {
   }
   function startMusic() {
     if (!audioContext) { const AudioContext = window.AudioContext || window.webkitAudioContext; if (AudioContext) audioContext = new AudioContext(); }
-    if (audioContext?.state === 'suspended') audioContext.resume();
+    if (audioContext?.state === 'suspended') audioContext.resume().catch(() => {});
     musicOn = true;
     const playback = halloweenTrack.play();
     playback?.catch(() => {
@@ -302,7 +303,12 @@ export function initHalloweenGame(root) {
   stage.addEventListener('pointerdown', steer);
   feedButton.addEventListener('click', feedFriend);
   root.querySelector('.game-reset').addEventListener('click', resetGame);
-  root.querySelector('.sound-toggle').addEventListener('click', () => musicOn ? stopMusic() : startMusic());
+  const soundToggle = root.querySelector('.sound-toggle');
+  soundToggle.addEventListener('click', () => {
+    window.removeEventListener('pointerdown', tryAutoplay);
+    window.removeEventListener('keydown', tryAutoplay);
+    musicOn ? stopMusic() : startMusic();
+  });
   root.querySelector('.belly-button').addEventListener('click', openSurprise);
   root.querySelector('.modal-close').addEventListener('click', () => { modal.hidden = true; document.body.classList.remove('modal-open'); });
   root.querySelector('.modal-play-again').addEventListener('click', resetGame);
@@ -310,9 +316,16 @@ export function initHalloweenGame(root) {
   window.addEventListener('keydown', event => { if (event.key === 'Escape' && !modal.hidden) { modal.hidden = true; document.body.classList.remove('modal-open'); } });
   window.addEventListener('resize', () => { if (!state.finished) basket.style.left = `${(stage.clientWidth - basket.offsetWidth) / 2}px`; });
 
-  // Try to start on load; autoplay policies may defer until a click or key press.
-  const tryAutoplay = () => { if (!musicOn) startMusic(); window.removeEventListener('pointerdown', tryAutoplay); window.removeEventListener('keydown', tryAutoplay); };
-  window.addEventListener('pointerdown', tryAutoplay, { once: true }); window.addEventListener('keydown', tryAutoplay, { once: true });
+  // Start on load where allowed, then retry on the first gesture if the browser blocks autoplay.
+  const tryAutoplay = (event) => {
+    if (event.target?.closest?.('.sound-toggle')) return;
+    window.removeEventListener('pointerdown', tryAutoplay);
+    window.removeEventListener('keydown', tryAutoplay);
+    if (!musicOn) startMusic();
+  };
+  window.addEventListener('pointerdown', tryAutoplay);
+  window.addEventListener('keydown', tryAutoplay);
+  startMusic();
   updatePersonPose(); updateHud(); drawBasketCandy(); requestAnimationFrame(() => { basket.style.left = `${(stage.clientWidth - basket.offsetWidth) / 2}px`; frame = requestAnimationFrame(gameLoop); });
   return () => { cancelAnimationFrame(frame); clearTimeout(toastTimer); halloweenTrack.pause(); window.removeEventListener('pointerdown', tryAutoplay); window.removeEventListener('keydown', tryAutoplay); if (audioContext) audioContext.close(); };
 }
