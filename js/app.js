@@ -1,11 +1,14 @@
 import { initPairsGame } from './game-pairs.js';
 import { initElementsGame } from './game-elements.js';
+import { initVerdictGame } from './game-verdict.js';
+import { initHalloweenGame } from './game-halloween.js';
 import { getTodayString } from './prng.js';
 
-const PASSWORD = 'skyr-me'; // obscurity only — visible in DevTools
+const PASSWORD = 'Hallow33n'; // client-side gate only; visible in DevTools
 const AUTH_COOKIE = 'daily_games_auth';
 const PAIRS_COOKIE = 'pairs_state';
 const ELEMENTS_COOKIE = 'elements_state';
+const VERDICT_COOKIE  = 'verdict_state';
 
 const ELEMENTS_TIERS = ['easy', 'medium', 'hard'];
 
@@ -161,6 +164,19 @@ const gameInits = {
       markComplete: elementsMarkComplete,
     });
   },
+  verdict: (el) => {
+    const today = getTodayString();
+    initVerdictGame(el, {
+      loadState: (d) => loadState(VERDICT_COOKIE, d),
+      saveMarked: (patch) => saveState(VERDICT_COOKIE, patch),
+      markComplete: () => {
+        const prior = loadState(VERDICT_COOKIE, today);
+        if (prior?.completed) return;
+        const streak = computeNewStreak(prior);
+        saveState(VERDICT_COOKIE, { completed: true, lastCompleted: today, streak });
+      },
+    });
+  },
 };
 
 function activateTab(gameId) {
@@ -192,8 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('pw-input');
   const error = document.getElementById('pw-error');
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
     if (input.value === PASSWORD) {
       setAuthed();
       gate.hidden = true;
@@ -208,6 +224,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function boot() {
+  // Feature flag: append ?legacy=1 to reveal the original daily games.
+  // The new Halloween game is the public, default GitHub Pages experience.
+  const legacyGamesEnabled = new URLSearchParams(location.search).get('legacy') === '1';
+  if (!legacyGamesEnabled) {
+    document.body.classList.add('halloween-mode');
+    document.getElementById('tab-bar').hidden = true;
+    initHalloweenGame(document.getElementById('game-area'));
+    return;
+  }
+
+  document.body.classList.remove('halloween-mode');
+  document.getElementById('tab-bar').hidden = false;
   document.querySelectorAll('#tab-bar .tab').forEach(btn => {
     btn.addEventListener('click', () => activateTab(btn.dataset.game));
   });

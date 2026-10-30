@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1117">
-  <meta name="description" content="Daily emoji pair matching puzzles">
-  <title>Daily Games</title>
+<meta name="theme-color" content="#1c1028">
+  <meta name="description" content="Catch Halloween candy and feed a spooky surprise!">
+  <title>Trick or Treat — The Great Candy Catch</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -38,6 +38,9 @@
       </button>
       <button class="tab" role="tab" data-game="elements" aria-selected="false">
         Elements 🜂
+      </button>
+      <button class="tab" role="tab" data-game="verdict" aria-selected="false">
+        Verdict ⚖️
       </button>
     </nav>
     <main id="game-area" role="main"></main>
@@ -104,6 +107,35 @@
         <h2 class="elements-win-title">🎉 Combined!</h2>
         <p class="elements-win-tier"></p>
         <p class="elements-win-moves"></p>
+        <div class="streak"></div>
+        <button class="share-btn">Share result</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Verdict game template -->
+  <template id="verdict-template">
+    <div class="verdict-header">
+      <h2>Verdict ⚖️</h2>
+      <div class="verdict-meta">
+        <span class="verdict-date"></span>
+        <span class="verdict-streak"></span>
+      </div>
+    </div>
+    <p class="verdict-scenario"></p>
+    <p class="verdict-hint">Mark exactly 2 lies — at most one per witness. Then submit.</p>
+    <div class="verdict-witnesses"></div>
+    <div class="verdict-feedback" aria-live="polite"></div>
+    <div class="verdict-controls">
+      <button class="verdict-submit-btn" disabled>Submit</button>
+    </div>
+
+    <div class="win-overlay" hidden role="dialog" aria-modal="true" aria-label="Puzzle complete">
+      <canvas class="confetti-canvas"></canvas>
+      <div class="win-card">
+        <button class="win-close" aria-label="Close">✕</button>
+        <h2>⚖️ Verdict reached!</h2>
+        <p class="verdict-win-attempts"></p>
         <div class="streak"></div>
         <button class="share-btn">Share result</button>
       </div>
